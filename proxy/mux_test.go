@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1121,4 +1122,35 @@ func (a *appender) NewHandler(next http.Handler) (http.Handler, error) {
 func (a *appender) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req.Header.Add("X-Append", a.append)
 	a.next.ServeHTTP(w, req)
+}
+
+func (s *ServerSuite) TestRawTCP(c *C) {
+
+	log.Warningf("TestRawTCPListener")
+	c.Assert(s.mux.Start(), IsNil)
+
+	a, err := engine.NewAddress("tcp", "localhost:7000")
+	c.Assert(err, IsNil)
+	// c.Assert(s.mux.UpsertListener(l), IsNil)
+
+	l := &engine.Listener{
+		Scope:    "",
+		Id:       "raw",
+		Address:  *a,
+		Protocol: engine.TCP,
+		Settings: nil,
+	}
+
+	c.Assert(s.mux.UpsertListener(*l), IsNil)
+
+	log.Infof("Client Dialing")
+	conn, err := net.Dial("tcp", "localhost:7000")
+	c.Assert(err, IsNil)
+
+	log.Infof("Client Writing")
+	_, err = conn.Write([]byte("0XDEADBEEF"))
+	c.Assert(err, IsNil)
+
+	log.Infof("Client Closing")
+	c.Assert(conn.Close(), IsNil)
 }
