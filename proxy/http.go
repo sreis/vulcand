@@ -1,13 +1,13 @@
 package proxy
 
 import (
-	"bufio"
 	"crypto/tls"
 
 	"fmt"
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/golang.org/x/crypto/ocsp"
 	"net"
 	"net/http"
+
+	"github.com/mailgun/vulcand/Godeps/_workspace/src/golang.org/x/crypto/ocsp"
 
 	"github.com/mailgun/vulcand/engine"
 
@@ -46,7 +46,7 @@ func (s *srv) String() string {
 	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, &s.listener)
 }
 
-func newSrv(m *mux, l engine.Listener) (*srv, error) {
+func newSrv(m *mux, l engine.Listener) (ProtocolHandler, error) {
 	defaultHost := ""
 	keyPairs := make(map[engine.HostKey]engine.KeyPair)
 	for hk, h := range m.hosts {
@@ -228,23 +228,6 @@ func (s *srv) newTLSConfig() (*tls.Config, error) {
 	return config, nil
 }
 
-func handleRawTCP(conn net.Conn) {
-	msg, _ := bufio.NewReader(conn).ReadString('\n')
-	log.Warningf("Received message: %s", msg)
-}
-
-func acceptRawTCP(listener net.Listener) {
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Errorf("Error accepting connection.")
-		} else {
-			log.Infof("Received Message from %s", conn.RemoteAddr())
-			go handleRawTCP(conn)
-		}
-	}
-}
-
 func (s *srv) start() error {
 	log.Infof("%s start", s)
 	switch s.state {
@@ -254,27 +237,22 @@ func (s *srv) start() error {
 			return err
 		}
 
-		if s.listener.Protocol == engine.TCP {
-			log.Warningf("Raw RCP Listener started.")
-			go acceptRawTCP(listener)
-		} else {
-			if s.isTLS() {
-				config, err := s.newTLSConfig()
-				if err != nil {
-					return err
-				}
-				listener = manners.NewTLSListener(
-					manners.TCPKeepAliveListener{listener.(*net.TCPListener)}, config)
+		if s.isTLS() {
+			config, err := s.newTLSConfig()
+			if err != nil {
+				return err
 			}
-			s.srv = manners.NewWithOptions(
-				manners.Options{
-					Server:       s.newHTTPServer(),
-					Listener:     listener,
-					StateHandler: s.mux.connTracker.onStateChange,
-				})
-			s.state = srvStateActive
-			go s.serve(s.srv)
+			listener = manners.NewTLSListener(
+				manners.TCPKeepAliveListener{listener.(*net.TCPListener)}, config)
 		}
+		s.srv = manners.NewWithOptions(
+			manners.Options{
+				Server:       s.newHTTPServer(),
+				Listener:     listener,
+				StateHandler: s.mux.connTracker.onStateChange,
+			})
+		s.state = srvStateActive
+		go s.serve(s.srv)
 		return nil
 	case srvStateHijacked:
 		s.state = srvStateActive
