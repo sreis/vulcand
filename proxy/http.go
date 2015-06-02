@@ -16,6 +16,11 @@ import (
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/route"
 )
 
+func init() {
+	RegisterFactory("http", newSrv)
+	RegisterFactory("https", newSrv)
+}
+
 // srv contains all that is necessary to run the HTTP(s) server. server does not work on its own,
 // it heavily depends on MuxServer and acts as its internal data structure.
 type srv struct {
@@ -26,6 +31,10 @@ type srv struct {
 	listener    engine.Listener
 	options     Options
 	state       int
+}
+
+func (s *srv) Listener() engine.Listener {
+	return s.listener
 }
 
 func (s *srv) GetFile() (*FileDescriptor, error) {

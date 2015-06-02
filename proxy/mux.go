@@ -22,7 +22,7 @@ type mux struct {
 	id int
 
 	// Each listener address has a server associated with it
-	servers map[engine.ListenerKey]*srv
+	servers map[engine.ListenerKey]ProtocolHandler
 
 	backends map[engine.BackendKey]*backend
 
@@ -74,7 +74,7 @@ func New(id int, st stapler.Stapler, o Options) (*mux, error) {
 		router:      route.NewMux(),
 		connTracker: newConnTracker(),
 
-		servers:   make(map[engine.ListenerKey]*srv),
+		servers:   make(map[engine.ListenerKey]ProtocolHandler),
 		backends:  make(map[engine.BackendKey]*backend),
 		frontends: make(map[engine.FrontendKey]*frontend),
 		hosts:     make(map[engine.HostKey]engine.Host),
@@ -210,9 +210,9 @@ func (m *mux) TakeFiles(files []*FileDescriptor) error {
 
 	for _, srv := range m.servers {
 
-		file, exists := fMap[srv.listener.Address]
+		file, exists := fMap[srv.Listener().Address]
 		if !exists {
-			log.Infof("%s skipping take of files from address %s, has no passed files", m, srv.listener.Address)
+			log.Infof("%s skipping take of files from address %s, has no passed files", m, srv.Listener().Address)
 			continue
 		}
 		if err := srv.takeFile(file); err != nil {
@@ -354,16 +354,19 @@ func (m *mux) upsertListener(l engine.Listener) error {
 
 	// Check if there's a listener with the same address
 	for _, srv := range m.servers {
-		if srv.listener.Address == l.Address {
-			return &engine.AlreadyExistsError{Message: fmt.Sprintf("%v conflicts with existing %v", l, srv.listener)}
+		if srv.Listener().Address == l.Address {
+			return &engine.AlreadyExistsError{Message: fmt.Sprintf("%v conflicts with existing %v", l, srv.Listener().Address)}
 		}
 	}
 
 	var err error
-	if s, err = newSrv(m, l); err != nil {
+	factory := GetFactory(l.Protocol)
+
+	if s, err = factory(m, l); err != nil {
 		return err
 	}
 	m.servers[lk] = s
+
 	// If we are active, start the server immediatelly
 	if m.state == stateActive {
 		log.Infof("Mux is in active state, starting the HTTP server")
